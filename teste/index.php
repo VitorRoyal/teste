@@ -3,7 +3,7 @@
 $host = 'localhost';
 $dbname = 'backup_certificados';
 $username = 'root';
-$password = '';
+$password = 'root';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -12,8 +12,8 @@ try {
 }
 
 // Diretórios de origem e destino dos arquivos
-$diretorio_origem = '';
-$diretorio_destino = '';
+$diretorio_origem = 'F:\\Certificado de Cursos';
+$diretorio_destino = 'F:\\Certificado de Cursos\\teste';
 
 // Função para buscar arquivos no diretório especificado (sem subdiretórios) 
 function buscarArquivos($diretorio) {
@@ -52,15 +52,11 @@ if (!empty($arquivos)) {
             mkdir($diretorio_destino, 0777, true);
         }
         
-        // Determina o próximo número do arquivo
-        $contador = 1;
-        do {
-            $novo_nome = "arquivo " . $contador . "." . pathinfo($ultimo_arquivo, PATHINFO_EXTENSION);
-            $novo_caminho = $diretorio_destino . DIRECTORY_SEPARATOR . $novo_nome;
-            $contador++;
-        } while (file_exists($novo_caminho));
+        // Define o novo nome do arquivo
+        $novo_nome = "arquivo." . pathinfo($ultimo_arquivo, PATHINFO_EXTENSION);
+        $novo_caminho = $diretorio_destino . DIRECTORY_SEPARATOR . $novo_nome;
         
-        // Copia o arquivo para o diretório de destino com o novo nome
+        // Copia o arquivo para o diretório de destino (substituindo se já existir)
         if (copy($ultimo_arquivo, $novo_caminho)) {
             echo "Arquivo copiado com sucesso para: " . $novo_caminho . "<br>";
             
