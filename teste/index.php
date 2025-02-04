@@ -6,7 +6,12 @@ $username = 'root';
 $password = 'root';
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+    ]);
+    
 } catch (PDOException $e) {
     die("Erro ao conectar ao banco de dados: " . $e->getMessage());
 }
@@ -53,7 +58,7 @@ if (!empty($arquivos)) {
         }
         
         // Define o novo nome do arquivo
-        $novo_nome = "arquivo." . pathinfo($ultimo_arquivo, PATHINFO_EXTENSION);
+        $novo_nome = "BASE_LINK.csv";
         $novo_caminho = $diretorio_destino . DIRECTORY_SEPARATOR . $novo_nome;
         
         // Copia o arquivo para o diretório de destino (substituindo se já existir)
@@ -73,4 +78,43 @@ if (!empty($arquivos)) {
 } else {
     echo "Nenhum arquivo encontrado no diretório.";
 }
+
+function converterParaUTF8($string) {
+    return mb_convert_encoding($string, 'UTF-8', 'auto');
+}
+
+
+// Processamento do arquivo CSV e exibição na tela
+$csv_caminho = $diretorio_destino . DIRECTORY_SEPARATOR . "BASE_LINK.csv";
+
+if (file_exists($csv_caminho)) {
+    if (($handle = fopen($csv_caminho, "r")) !== FALSE) {
+        echo "<table border='1'>";
+        echo "<tr><th>CHAVE_LOJA</th><th>NOME_LOJA</th><th>ONLYLINKS</th></tr>";
+
+        // Ignorar o cabeçalho, se existir
+        fgetcsv($handle, 1000, ",");
+
+        while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+            $chave_loja = converterParaUTF8($data[0]);
+            $nome_loja = converterParaUTF8($data[1]);
+            $onlylinks = converterParaUTF8($data[2]);
+
+            // Exibir os dados na tela em formato de tabela
+            echo "<tr>";
+            echo "<td>{$chave_loja}</td>";
+            echo "<td>{$nome_loja}</td>";
+            echo "<td>{$onlylinks}</td>";
+            echo "</tr>";
+        }
+        echo "</table>";
+
+        fclose($handle);
+    } else {
+        echo "Erro ao abrir o arquivo CSV.";
+    }
+} else {
+    echo "Arquivo CSV não encontrado.";
+}
+
 ?>
