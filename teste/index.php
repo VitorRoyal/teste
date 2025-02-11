@@ -1,4 +1,8 @@
 <?php
+require 'vendor/autoload.php'; // PhpSpreadsheet
+
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
 // Configuração do banco de dados
 $host = 'localhost';
 $dbname = 'backup_certificados';
@@ -11,110 +15,100 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
     ]);
-    
 } catch (PDOException $e) {
     die("Erro ao conectar ao banco de dados: " . $e->getMessage());
 }
 
-// Diretórios de origem e destino dos arquivos
-$diretorio_origem = 'F:\\Certificado de Cursos';
-$diretorio_destino = 'F:\\Certificado de Cursos\\teste';
+// Processamento do arquivo XLSX e inserção no banco
+$xlsx_caminho = 'F:\\Certificado de Cursos\\teste\\BASE_LINK.xlsx';
 
-// Função para buscar arquivos no diretório especificado (sem subdiretórios) 
-function buscarArquivos($diretorio) {
-    $arquivos = array();
-    
-    if (is_dir($diretorio)) {
-        $itens = scandir($diretorio);
-        foreach ($itens as $item) {
-            $caminho_item = $diretorio . DIRECTORY_SEPARATOR . $item;
-            if (is_file($caminho_item)) {
-                $arquivos[$caminho_item] = filectime($caminho_item); // Usa a data de criação
-            }
+if (file_exists($xlsx_caminho)) {
+    $spreadsheet = IOFactory::load($xlsx_caminho);
+    $sheet = $spreadsheet->getActiveSheet();
+    $dados = $sheet->toArray();
+
+    array_shift($dados);
+
+    $stmt = $pdo->prepare("INSERT INTO tabela_destino (CHAVE_LOJA, NOME_LOJA, ONLYLINKS) VALUES (?, ?, ?)");
+
+    foreach ($dados as $linha) {
+        $chave_loja = $linha[0] ?? null;
+        $nome_loja = $linha[1] ?? null;
+        $onlylinks = $linha[2] ?? null;
+
+        if ($chave_loja && $nome_loja && $onlylinks) {
+            $stmt->execute([$chave_loja, $nome_loja, $onlylinks]);
         }
     }
-    return $arquivos;
+
+    echo "Dados inseridos com sucesso!<br>";
+
+    // Agora fazemos o UPDATE com JOIN
+    $stmt = $pdo->prepare("
+        UPDATE tabela_destino td
+        JOIN tabela_b_links bl ON td.CHAVE_LOJA = bl.CHAVE_LOJA
+        SET bl.B_LINK = td.ONLYLINKS, 
+            bl.data_att = NOW()
+        WHERE bl.B_LINK IS NULL
+    ");
+    $stmt->execute();
+
+    echo "Dados atualizados com sucesso!<br>";
 }
 
-// Busca os arquivos no diretório de origem
-$arquivos = buscarArquivos($diretorio_origem);
+// Consulta ao banco para exibir os dados
+$stmt = $pdo->query("SELECT * FROM tabela_destino");
+$dados = $stmt->fetchAll();
 
-if (!empty($arquivos)) {
-    // Ordena os arquivos pela data de criação (mais recente primeiro)
-    arsort($arquivos);
-    reset($arquivos);
-    $ultimo_arquivo = key($arquivos);
-    $nome_arquivo = basename($ultimo_arquivo);
-    
-    // Verifica se o arquivo já está no banco de dados (pelo nome antigo) 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM arquivos_backup WHERE nome_antigo = ?");
-    $stmt->execute([$nome_arquivo]);
-    $ja_existe = $stmt->fetchColumn();
-    
-    if (!$ja_existe) {
-        // Verifica se o diretório de destino existe, se não, cria
-        if (!is_dir($diretorio_destino)) {
-            mkdir($diretorio_destino, 0777, true);
-        }
-        
-        // Define o novo nome do arquivo
-        $novo_nome = "BASE_LINK.csv";
-        $novo_caminho = $diretorio_destino . DIRECTORY_SEPARATOR . $novo_nome;
-        
-        // Copia o arquivo para o diretório de destino (substituindo se já existir)
-        if (copy($ultimo_arquivo, $novo_caminho)) {
-            echo "Arquivo copiado com sucesso para: " . $novo_caminho . "<br>";
-            
-            // Insere no banco de dados com a data formatada no padrão BR
-            $data_copia = date("Y-m-d");
-            $stmt = $pdo->prepare("INSERT INTO arquivos_backup (nome_antigo, nome_novo, data_copia) VALUES (?, ?, ?)");
-            $stmt->execute([$nome_arquivo, $novo_nome, $data_copia]);
-        } else {
-            echo "Erro ao copiar o arquivo.";
-        }
-    } else {
-        echo "O arquivo já foi copiado anteriormente.";
-    }
-} else {
-    echo "Nenhum arquivo encontrado no diretório.";
+// Capturar a saída na variável
+ob_start();
+
+// Exibir os dados da tabela no terminal
+echo "CHAVE_LOJA | NOME_LOJA | ONLYLINKS\n";
+echo str_repeat("-", 50) . "\n";
+
+$chave_loja_array = [];
+$nome_loja_array = [];
+$onlylinks_array = [];
+
+foreach ($dados as $linha) {
+    echo $linha['CHAVE_LOJA'] . " | " . $linha['NOME_LOJA'] . " | " . $linha['ONLYLINKS'] . "\n";
+
+    // Armazena os dados nos arrays para o JavaScript
+    $chave_loja_array[] = $linha['CHAVE_LOJA'];
+    $nome_loja_array[] = $linha['NOME_LOJA'];
+    $onlylinks_array[] = $linha['ONLYLINKS'];
 }
 
-function converterParaUTF8($string) {
-    return mb_convert_encoding($string, 'UTF-8', 'auto');
-}
+// Armazena o resultado da query em uma variável
+$tabela_output = ob_get_clean();
 
-
-// Processamento do arquivo CSV e exibição na tela
-$csv_caminho = $diretorio_destino . DIRECTORY_SEPARATOR . "BASE_LINK.csv";
-
-if (file_exists($csv_caminho)) {
-    if (($handle = fopen($csv_caminho, "r")) !== FALSE) {
-        echo "<table border='1'>";
-        echo "<tr><th>CHAVE_LOJA</th><th>NOME_LOJA</th><th>ONLYLINKS</th></tr>";
-
-        // Ignorar o cabeçalho, se existir
-        fgetcsv($handle, 1000, ",");
-
-        while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-            $chave_loja = converterParaUTF8($data[0]);
-            $nome_loja = converterParaUTF8($data[1]);
-            $onlylinks = converterParaUTF8($data[2]);
-
-            // Exibir os dados na tela em formato de tabela
-            echo "<tr>";
-            echo "<td>{$chave_loja}</td>";
-            echo "<td>{$nome_loja}</td>";
-            echo "<td>{$onlylinks}</td>";
-            echo "</tr>";
-        }
-        echo "</table>";
-
-        fclose($handle);
-    } else {
-        echo "Erro ao abrir o arquivo CSV.";
-    }
-} else {
-    echo "Arquivo CSV não encontrado.";
-}
-
+// Exibe a tabela capturada
+echo "<pre>$tabela_output</pre>";
 ?>
+
+<script>
+    let chave_loja = <?php echo json_encode($chave_loja_array); ?>;
+    let nome_loja = <?php echo json_encode($nome_loja_array); ?>;
+    let onlylinks = <?php echo json_encode($onlylinks_array); ?>;
+
+    let dadosParaAPI = {
+        chave_loja: chave_loja,
+        nome_loja: nome_loja,
+        onlylinks: onlylinks
+    };
+
+    console.log('Dados prontos para envio à API:', dadosParaAPI);
+
+    // Enviar para a API (exemplo usando fetch)
+    fetch('https://sua-api.com/endpoint', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(dadosParaAPI)
+    })
+    .then(response => response.json())
+    .then(data => console.log('Resposta da API:', data))
+    .catch(error => console.error('Erro ao enviar dados:', error));
+</script>
